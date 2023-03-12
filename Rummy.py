@@ -163,10 +163,11 @@ class Player:
                 overlapped_rect = pygame.Rect((card.rect.left, card.rect.top), (card.rect.width, card.rect.height))
             else:
                 overlapped_rect = pygame.Rect((card.rect.left, card.rect.top), (card.rect.width - 35, card.rect.height))
-            if overlapped_rect.collidepoint(mouse_pos):
+            if overlapped_rect.collidepoint(mouse_pos) and self.selected_card == None:
                 card.selected = True
                 self.selected_card = card
                 card.rel_pos = (card.rect.x - mouse_pos[0], card.rect.y - mouse_pos[1] - 30)
+                break
     def discard_card(self, card, pile):
         if card in self.hand:
             pile.put(self.hand.discard(card))
@@ -205,9 +206,9 @@ class Game:
             self.player.hand.add_card(self.deck.deal())
             self.computer.hand.add_card(self.deck.deal())
     def get_computers_move(self):
+        self.computer.draw_card(self.deck)
         for card in self.computer.hand:
             card.drop_pos = [1280, 0]
-        self.computer.draw_card(self.deck)
         self.computer.hand.sort_by_rank()
         self.computer.discard_card(self.computer.hand.cards[0], self.pile)
         self.state = States.DRAW
@@ -226,7 +227,7 @@ class Game:
                 elif self.state == States.DRAW and self.pile.rect.collidepoint(event.pos):
                     self.player.draw_card(self.pile)
                     self.state = States.DISCARD
-                else:
+                elif self.player.selected_card == None:
                     self.player.select_card(event.pos)
         elif event.type == pygame.MOUSEBUTTONUP:
             if self.player.selected_card != None:
