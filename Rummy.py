@@ -43,6 +43,7 @@ class Card(pygame.sprite.Sprite):
         self.image = pygame.transform.scale(self.image, (int(self.image.get_width()/4), int(self.image.get_height()/4)))
         self.selected = False
         self.detached = False
+        self.fixed = False
         self.drop_pos = [0, 0]
         self.snapped_pos = [0, 0]
         self.rect = self.image.get_rect()
@@ -59,15 +60,18 @@ class Card(pygame.sprite.Sprite):
         elif self.selected:
             self.animate((self.drop_pos[0], self.snapped_pos[1] - 30), 1)
         else:
-            self.animate(self.snapped_pos, 0.8)
+            self.animate(self.snapped_pos, 1)
 
 class Hand(pygame.sprite.OrderedUpdates):
     def __init__(self):
         super().__init__()
         self.cards = []
     def add_card(self, card):
-        self.cards.append(card)
-        self.add(card)
+        if card is not None:
+            if card.rank == 1:
+                card.rank = Ranks.ACE
+            self.cards.append(card)
+            self.add(card)
     def sort_by_rank(self):
         self.cards.sort(key = lambda card: (card.rank, card.suit))
     def sort_by_suit(self):
@@ -120,7 +124,7 @@ class Pile(pygame.sprite.OrderedUpdates):
         self.update()
     def update(self):
         for card in self.cards:
-            card.animate((18, 200), 3)
+            card.animate((18, 200), 1.5)
 
 class Meld(pygame.sprite.OrderedUpdates):
     def __init__(self, pos):
@@ -129,22 +133,40 @@ class Meld(pygame.sprite.OrderedUpdates):
         self.rect = pygame.Rect(pos, (125, 181))
     def put(self, card):
         self.cards.append(card)
-        if (self.cards):
-            if not (self.is_valid_run() or self.is_valid_set()):
-                self.cards.pop()
-                return False
-        card.kill()
-        self.add(card)
-        self.rect.width = 125+(len(self.cards)-1)*28
-        self.update()
-        return True   
-    def is_valid_run(self): #TO DO: JOKER LOGIC
+        if self.is_valid_run() or self.is_valid_set():
+            card.kill()
+            return True
+        self.cards.pop()
+        self.cards.insert(0, card)
+        if self.is_valid_run() or self.is_valid_set():
+            card.kill()
+            return True
+        self.cards.pop(0)
+        return False
+    def deal(self):
+        if not self.cards[-1].fixed:
+            return self.cards.pop()
+        return None
+    def swap_joker(self, Card):
+        for i, card in enumerate(self.cards):
+            if card.rank == Ranks.JOKER and card.fixed and Card.rank != Ranks.JOKER:
+                temp = self.cards[i]
+                self.cards[i] = Card
+                if not (self.is_valid_run() or self.is_valid_set()):
+                    self.cards[i] = temp
+                    continue
+                self.cards[i].fixed = True
+                Card.kill()
+                return True
+        return False
+    def is_valid_run(self):
         if self.cards:
             suit = self.cards[0].suit
-            if self.cards[0].rank == Ranks.ACE:
-                self.cards[0].rank = 1
-            elif self.cards[0].rank == Ranks.JOKER and len(self.cards) > 1:
-                suit = self.cards[1].suit
+            if len(self.cards) > 1: 
+                if self.cards[0].rank == Ranks.ACE and self.cards[1].rank != Ranks.ACE:
+                    self.cards[0].rank = 1
+                elif self.cards[0].rank == Ranks.JOKER:
+                    suit = self.cards[1].suit
             if len(self.cards) < 4 and sum(1 for card in self.cards if card.rank == Ranks.JOKER) > 1:
                 return False
             if any(card.rank == Ranks.JOKER and self.cards[i+1].rank == Ranks.JOKER for i, card in enumerate(self.cards[:-1])):
@@ -153,6 +175,10 @@ class Meld(pygame.sprite.OrderedUpdates):
                 return False
             if any(self.cards[i+1].rank != card.rank + 1 and self.cards[i+1].rank != Ranks.JOKER and card.rank != Ranks.JOKER for i, card in enumerate(self.cards[:-1])):
                 return False
+            if len(self.cards) > 2:
+                for i, card in enumerate(self.cards[:-1]):
+                    if card.rank == Ranks.JOKER and self.cards[i+1].rank != self.cards[i-1].rank + 2:
+                        return False
         return True
     def is_valid_set(self):
         if self.cards:
@@ -165,8 +191,12 @@ class Meld(pygame.sprite.OrderedUpdates):
                 return False
         return True
     def update(self):
+        self.empty()
         for index, card in enumerate(self.cards):
+            self.add(card)
             card.animate((self.rect.topleft[0]+index*28, self.rect.topleft[1]), 3)
+        if self.cards:
+            self.rect.width = 125+(len(self.cards)-1)*28
             
 class Player:
     def __init__(self):
@@ -194,6 +224,12 @@ class Player:
     def add_to_meld(self, meld, card):
         if card in self.hand and meld.put(card):
             self.hand.discard(card)
+    def swap_joker(self, meld, card):
+        if card in self.hand:
+            joker = next((card for card in meld.cards if card.rank == Ranks.JOKER), None)
+            if joker and meld.swap_joker(card):
+                self.hand.discard(card)
+                self.hand.add_card(joker)
     def move_card(self, mouse_pos, game_state):
         posx = mouse_pos[0] + self.selected_card.rel_pos[0]
         first = resolution[0]/2 - (len(self.hand.cards) / 2 + 1) * 80
@@ -240,6 +276,7 @@ class Game:
         self.computer.hand.sort_by_rank()
         self.computer.discard_card(self.computer.hand.cards[0], self.pile)
         self.state = States.DRAW
+        self.check_winners()
     def validate_melds(self):
         if any(len(meld.cards) > 0 and len(meld.cards) < 3 or not (meld.is_valid_run() or meld.is_valid_set()) for meld in self.melds):
             return False
@@ -254,6 +291,29 @@ class Game:
         rect = text.get_rect()
         rect.center = (screen.get_width() / 2, screen.get_height() * 5 / 7)
         screen.blit(text, rect)
+    def fix_cards(self):
+        for meld in self.melds:
+            for card in meld.cards:
+                card.fixed = True
+        for card in self.player.hand:
+            card.fixed = False
+    def check_winners(self):
+        if self.state == States.DRAW:
+            if len(self.player.hand.cards) == 0:
+                self.state = States.OVER
+            elif len(self.computer.hand.cards) == 0:
+                self.state = States.OVER
+    def restart(self):
+        self.deck = Deck(self.images)
+        self.player.hand = Hand()
+        self.computer.hand = Hand()
+        self.state = States.DRAW
+        self.deal_cards()
+        self.pile = Pile(self.deck.deal())
+        self.melds = []
+        self.melds.append(Meld((170, 10)))
+        self.player.hand.sort_by_rank()
+        self.melds_valid = True
     def handle_event(self, event):
         if event.type == pygame.QUIT or event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             self.state = 0
@@ -267,6 +327,9 @@ class Game:
                     self.state = States.DISCARD
                 elif self.player.selected_card == None:
                     self.player.select_card(event.pos)
+                for meld in self.melds:
+                    if self.state == States.DISCARD and meld.rect.collidepoint(event.pos):
+                        self.player.draw_card(meld)
         elif event.type == pygame.MOUSEBUTTONUP:
             if self.player.selected_card != None:
                 card = self.player.selected_card
@@ -275,34 +338,42 @@ class Game:
                     if self.melds_valid:
                         self.player.discard_card(card, self.pile)
                         self.state = States.COMPUTERS_TURN
+                        self.fix_cards()
+                        self.check_winners()
                         self.get_computers_move()
                 else: 
                     for meld in self.melds:
                         if meld.rect.collidepoint(card.rect.center):
+                             self.player.swap_joker(meld, card)
                              self.player.add_to_meld(meld, card)
                              self.add_meld()
                 card.selected = card.detached = False
                 self.player.selected_card = None
-        elif event.type == pygame.MOUSEMOTION:
-            if self.player.selected_card != None:
-                 self.player.move_card(event.pos, self.state)
+        elif event.type == pygame.MOUSEMOTION and self.player.selected_card:
+            self.player.move_card(event.pos, self.state)
     def draw(self, screen):
         screen.fill((7,92,19))
         self.sprites_all.update()
         self.sprites_all.draw(screen)
         self.pile.update()
         self.pile.draw(screen)
+        row = 0
         for i, meld in enumerate(self.melds[:-1]):
             self.melds[i+1].rect.x = meld.rect.right + 20
-            if(meld.rect.right + 145) > resolution[0]: #TO DO: MELDS WRAPPING WHEN NEXT ONE IS OUT OF SCREEN
-                self.melds[i+1].rect.y = meld.rect.y + 201
+            self.melds[i+1].rect.y = self.melds[0].rect.y + 201 * row
+            if meld.rect.right + 145 > resolution[0]:
+                row += 1
         for meld in self.melds:
             meld.update()
             meld.draw(screen)
-            if not meld.cards:
-                pygame.draw.rect(screen, (255, 255, 255), meld.rect,  2, 3)
+        if not self.melds[-1].cards:
+            pygame.draw.rect(screen, (255, 255, 255), self.melds[-1].rect,  2, 3)
+        if not self.pile.cards:
+            pygame.draw.rect(screen, (255, 255, 255), self.pile.rect,  2, 3)
         if not self.melds_valid:
             self.incorrect_meld(screen)
+        for i in range(len(self.computer.hand.cards)):
+            screen.blit(self.deck.image, (resolution[0] - 200 - i * 30, -130))
         self.player.hand.update()
         self.player.hand.draw(screen)
         pygame.display.update()
