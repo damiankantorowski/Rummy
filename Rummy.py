@@ -1,44 +1,13 @@
 import pygame
-from operator import index
 from random import shuffle
-from os import path
-from enum import IntEnum
-
-class Suits(IntEnum):
-    CLUBS = 1
-    SPADES = 2
-    HEARTS = 3
-    DIAMONDS = 4
-
-class Ranks(IntEnum):
-    TWO = 2
-    THREE = 3
-    FOUR = 4
-    FIVE = 5
-    SIX = 6
-    SEVEN = 7
-    EIGHT = 8
-    NINE = 9
-    TEN = 10
-    JACK = 11
-    QUEEN = 12
-    KING = 13
-    ACE = 14
-    JOKER = 15
-
-class States(IntEnum):
-    CLOSED = 0
-    MENU = 1
-    DRAW = 2
-    DISCARD = 3
-    COMPUTERS_TURN = 4
-    OVER = 5
+from Enums import Suits, Ranks, Scores, States
 
 class Card(pygame.sprite.Sprite):
-    def __init__(self, suit, rank, img):
+    def __init__(self, suit, rank, score, img):
         super().__init__()
         self.suit = suit
         self.rank = rank
+        self.score = score
         self.image = img
         self.image = pygame.transform.scale(self.image, (int(self.image.get_width()/4), int(self.image.get_height()/4)))
         self.selected = False
@@ -97,10 +66,10 @@ class Deck(pygame.sprite.Sprite):
         num = 1
         for suit in Suits:
             for rank in range(Ranks.TWO, Ranks.JOKER):
-                self.cards.append(Card(suit, rank, images[num]))
+                self.cards.append(Card(suit, rank, Scores[Ranks(rank).name], images[num]))
                 num+=1
-        self.cards.append(Card(5, Ranks.JOKER, images[53]))
-        self.cards.append(Card(5, Ranks.JOKER, images[53]))
+        self.cards.append(Card(5, Ranks.JOKER, Scores.JOKER, images[53]))
+        self.cards.append(Card(5, Ranks.JOKER, Scores.JOKER, images[53]))
     def shuffle(self):
         shuffle(self.cards)
     def deal(self):
@@ -144,8 +113,9 @@ class Meld(pygame.sprite.OrderedUpdates):
         self.cards.pop(0)
         return False
     def deal(self):
-        if not self.cards[-1].fixed:
-            return self.cards.pop()
+        for card in reversed(self.cards):
+            if not card.fixed:
+                return self.cards.pop(self.cards.index(card))
         return None
     def swap_joker(self, Card):
         for i, card in enumerate(self.cards):
@@ -157,13 +127,13 @@ class Meld(pygame.sprite.OrderedUpdates):
                     continue
                 self.cards[i].fixed = True
                 Card.kill()
-                return True
-        return False
+                return temp
+        return None
     def is_valid_run(self):
         if self.cards:
             suit = self.cards[0].suit
             if len(self.cards) > 1: 
-                if self.cards[0].rank == Ranks.ACE and self.cards[1].rank != Ranks.ACE:
+                if self.cards[0].rank == Ranks.ACE and self.cards[1].rank != Ranks.ACE and self.cards[1].rank != Ranks.KING:
                     self.cards[0].rank = 1
                 elif self.cards[0].rank == Ranks.JOKER:
                     suit = self.cards[1].suit
@@ -175,7 +145,7 @@ class Meld(pygame.sprite.OrderedUpdates):
                 return False
             if any(self.cards[i+1].rank != card.rank + 1 and self.cards[i+1].rank != Ranks.JOKER and card.rank != Ranks.JOKER for i, card in enumerate(self.cards[:-1])):
                 return False
-            if len(self.cards) > 2:
+            if len(self.cards) > 2 and self.cards[0].rank != Ranks.JOKER:
                 for i, card in enumerate(self.cards[:-1]):
                     if card.rank == Ranks.JOKER and self.cards[i+1].rank != self.cards[i-1].rank + 2:
                         return False
@@ -185,6 +155,8 @@ class Meld(pygame.sprite.OrderedUpdates):
             rank = self.cards[0].rank
             if self.cards[0].rank == Ranks.JOKER and len(self.cards) > 1:
                 rank = self.cards[1].rank
+            if len(self.cards) > 4:
+                return False
             if len(self.cards) < 4 and sum(1 for card in self.cards if card.rank == Ranks.JOKER) > 1:
                 return False
             if any(card.rank != rank and card.rank != Ranks.JOKER for card in self.cards):
@@ -201,7 +173,7 @@ class Meld(pygame.sprite.OrderedUpdates):
 class Player:
     def __init__(self):
         self.hand = Hand()
-        self.points = 0
+        self.score = 0
         self.selected_card = None
     def draw_card(self, pile):
         if len(pile.cards) > 0:
@@ -224,12 +196,16 @@ class Player:
     def add_to_meld(self, meld, card):
         if card in self.hand and meld.put(card):
             self.hand.discard(card)
+            return True
+        return False
     def swap_joker(self, meld, card):
         if card in self.hand:
-            joker = next((card for card in meld.cards if card.rank == Ranks.JOKER), None)
-            if joker and meld.swap_joker(card):
+            joker = meld.swap_joker(card)
+            if joker:
                 self.hand.discard(card)
                 self.hand.add_card(joker)
+                return True
+        return False
     def move_card(self, mouse_pos, game_state):
         posx = mouse_pos[0] + self.selected_card.rel_pos[0]
         first = resolution[0]/2 - (len(self.hand.cards) / 2 + 1) * 80
@@ -263,7 +239,7 @@ class Game:
     def load_images(self):
         images = {}
         for i in range(54):
-            images[i] = pygame.image.load(path.join('cards', f'{i}.png')).convert_alpha()
+            images[i] = pygame.image.load(f'cards/{i}.png').convert_alpha()
         return images
     def deal_cards(self):
         for i in range(10):
@@ -298,11 +274,13 @@ class Game:
         for card in self.player.hand:
             card.fixed = False
     def check_winners(self):
-        if self.state == States.DRAW:
-            if len(self.player.hand.cards) == 0:
-                self.state = States.OVER
-            elif len(self.computer.hand.cards) == 0:
-                self.state = States.OVER
+        if len(self.player.hand.cards) == 0 and self.state == States.COMPUTERS_TURN:
+            self.player.score += sum(card.score for card in self.computer.hand.cards)
+        elif len(self.computer.hand.cards) == 0 and self.state == States.DRAW:
+            self.computer.score += sum(card.score for card in self.player.hand.cards)
+        else: return
+        self.state = States.OVER
+        self.restart()
     def restart(self):
         self.deck = Deck(self.images)
         self.player.hand = Hand()
@@ -344,9 +322,8 @@ class Game:
                 else: 
                     for meld in self.melds:
                         if meld.rect.collidepoint(card.rect.center):
-                             self.player.swap_joker(meld, card)
-                             self.player.add_to_meld(meld, card)
-                             self.add_meld()
+                             if self.player.swap_joker(meld, card) or self.player.add_to_meld(meld, card):
+                                self.add_meld()
                 card.selected = card.detached = False
                 self.player.selected_card = None
         elif event.type == pygame.MOUSEMOTION and self.player.selected_card:
