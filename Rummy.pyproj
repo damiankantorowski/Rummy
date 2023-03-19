@@ -23,6 +23,7 @@
     <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
   </PropertyGroup>
   <ItemGroup>
+    <Compile Include="Enums.py" />
     <Compile Include="Rummy.py" />
   </ItemGroup>
   <ItemGroup>
