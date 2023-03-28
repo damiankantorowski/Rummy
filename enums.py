@@ -43,6 +43,4 @@ class States(IntEnum):
     MENU = 1
     DRAW = 2
     DISCARD = 3
-    COMPUTER_DRAW = 4
-    COMPUTER_DISCARD = 5
-    OVER = 6
+    OVER = 4

@@ -28,22 +28,22 @@ class Node:
         self.wins += terminal_state.get_result(self.player)
 
 class ISMCTS:
-    def __init__(self, root_state, limit=50):
+    def __init__(self, root_state, limit=5000):
         root_node = Node()
         for i in range(limit):
             node = root_node
-            state = root_state.clone_and_randomize(root_state.player)
-            while state.get_moves() and not node.get_untried_moves(state.get_moves()):
-                node = node.select_child(state.get_moves())
+            state = root_state.clone_and_randomize(root_state.current_player)
+            while (legal_moves := state.get_moves()) and not node.get_untried_moves(legal_moves):
+                node = node.select_child(legal_moves)
                 state.do_move(node.move)
             untried_moves = node.get_untried_moves(state.get_moves())
             if untried_moves:
                 m = choice(untried_moves)
-                player = state.computer
+                player = state.current_player
                 state.do_move(m)
                 node = node.add_child(m, player) 
-            while state.get_moves():
-                state.do_move(choice(state.get_moves()))
+            while legal_moves := state.get_moves():
+                state.do_move(choice(legal_moves))
             while node is not None:
                 node.update(state)
                 node = node.parent
