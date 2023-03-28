@@ -28,7 +28,10 @@ class Node:
         self.wins += terminal_state.get_result(self.player)
 
 class ISMCTS:
-    def __init__(self, root_state, limit=5000):
+    def __init__(self):
+        self.best_move = None
+        self.thread = None
+    def run(self, root_state, limit=2000):
         root_node = Node()
         for i in range(limit):
             node = root_node
@@ -36,8 +39,7 @@ class ISMCTS:
             while (legal_moves := state.get_moves()) and not node.get_untried_moves(legal_moves):
                 node = node.select_child(legal_moves)
                 state.do_move(node.move)
-            untried_moves = node.get_untried_moves(state.get_moves())
-            if untried_moves:
+            if untried_moves := node.get_untried_moves(state.get_moves()):
                 m = choice(untried_moves)
                 player = state.current_player
                 state.do_move(m)

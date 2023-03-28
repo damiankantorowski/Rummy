@@ -3,6 +3,7 @@ from random import shuffle, choice
 from copy import deepcopy
 from enums import Suits, Ranks, Scores, States
 from ISMCTS import ISMCTS
+from threading import Thread
 
 class Card(pygame.sprite.Sprite):
     def __init__(self, suit, rank, score, img):
@@ -17,7 +18,6 @@ class Card(pygame.sprite.Sprite):
         self.selected = False
         self.detached = False
         self.fixed = False
-        self.in_place = False
     def __deepcopy__(self, _):
         new = Card.__new__(Card)
         new.suit = self.suit
@@ -25,13 +25,10 @@ class Card(pygame.sprite.Sprite):
         new.score = self.score
         return new
     def animate(self, destination, speed):
-        self.in_place = False
         self.drop_pos[0] += (destination[0] - self.drop_pos[0]) * speed / 10
         self.drop_pos[1] += (destination[1] - self.drop_pos[1]) * speed / 10   
         self.rect.x = round(self.drop_pos[0])
         self.rect.y = round(self.drop_pos[1])
-        if self.rect.x == destination[0] and self.rect.y == destination[1]:
-            self.in_place = True
     def update(self, index, length):
         self.snapped_pos = (resolution[0]/2 - (length / 2) * (self.rect.width - 35) + index * (self.rect.width - 35), resolution[1] - self.rect.height)
         if self.detached: 
@@ -282,7 +279,7 @@ class Player:
         for card in self.hand.cards:
             for meld in melds[:-1]:
                 self.add_to_meld(meld, card)
-    def move_card(self, mouse_pos, game_state):
+    def move_card(self, mouse_pos, game_state, is_players_turn):
         posx = mouse_pos[0] + self.selected_card.rel_pos[0]
         first = resolution[0]/2 - (len(self.hand.cards) / 2 + 1) * 80
         last = resolution[0]/2 + (len(self.hand.cards) / 2) * 80
@@ -293,7 +290,7 @@ class Player:
             if cropped_rect.collidepoint(self.selected_card.rect.center):
                 a, b = self.hand.cards.index(self.selected_card), self.hand.cards.index(card)
                 self.hand.cards.insert(b, self.hand.cards.pop(a))
-        if game_state != States.DRAW:
+        if game_state == States.DISCARD and is_players_turn:
             self.selected_card.detached = True
             self.selected_card.drop_pos[0] = mouse_pos[0] + self.selected_card.rel_pos[0]
             self.selected_card.drop_pos[1] = mouse_pos[1] + self.selected_card.rel_pos[1]
@@ -304,6 +301,7 @@ class Game():
         self.deck = Deck(self.images)
         self.player = Player()
         self.computer = Player()
+        self.search = ISMCTS()
         self.state = States.DRAW
         self.current_player = self.player
         self.deal_cards()
@@ -326,11 +324,16 @@ class Game():
             self.player.hand.add_card(self.deck.deal())
             self.computer.hand.add_card(self.deck.deal())
     def get_computers_move(self):
-        if self.current_player == self.computer and self.done_animating() and self.state != States.OVER:
+        if self.current_player == self.computer and self.state != States.OVER:
             if self.state == States.DISCARD:
                 self.computer.lay_off(self.melds)
-            best_move = ISMCTS(self).best_move
-            print(best_move)
+            if self.search.best_move:
+                print(self.search.best_move)
+                self.do_move(self.search.best_move)
+                self.search.best_move = None
+            elif self.search.thread is None or not self.search.thread.is_alive():
+                self.search.thread = Thread(target=self.search.run, args = [self], daemon = True)
+                self.search.thread.start()
             #if best_move[1] == 'discard':
             #    card = self.computer.hand.cards[best_move[2]]
             #    if card.rank == Ranks.JOKER:
@@ -340,7 +343,7 @@ class Game():
             #    print(best_move[0], best_move[1], best_move[2])
             #elif best_move[1] == 'lay_off':
             #    print(best_move[0], best_move[1])
-            self.do_move(best_move)
+
             #for card in self.computer.hand.cards:
             #    if card.rank == Ranks.JOKER:
             #        print("JOKER")
@@ -364,12 +367,6 @@ class Game():
                 row += 1
                 self.melds[i+1].rect.x = 170
             self.melds[i+1].rect.y = self.melds[0].rect.y + 201 * row
-    def done_animating(self):
-        if any(not card.in_place for card in self.pile.cards):
-            return False
-        if any(not card.in_place for card in self.player.hand.cards):
-            return False
-        return True
     def print_error(self, screen, text):
         font = pygame.font.SysFont(None, 50)
         text = font.render(text, True, (255, 255, 255))
@@ -492,7 +489,7 @@ class Game():
                 card.selected = card.detached = False
                 self.player.selected_card = None
         elif event.type == pygame.MOUSEMOTION and self.player.selected_card:
-            self.player.move_card(event.pos, self.state)
+            self.player.move_card(event.pos, self.state, self.is_players_turn())
     def update(self):
         self.pile.update()
         self.sprites_all.update()
