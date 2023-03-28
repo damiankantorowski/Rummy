@@ -1,3 +1,6 @@
+# Written by Peter Cowling, Edward Powley, Daniel Whitehouse (University of York, UK) September 2012 - August 2013.
+# Licence is granted to freely use and distribute for any sensible/legal purpose so long as this comment remains in any distributed code.
+# Read the article accompanying this code https://www.aifactory.co.uk/newsletter/2013_01_reduce_burden.htm
 from math import sqrt, log
 from random import choice
 
@@ -15,10 +18,10 @@ class Node:
         return [move for move in legal_moves if move not in tried_moves]
     def select_child(self, legal_moves, exploration=0.7):
         legal_children = [child for child in self.children if child.move in legal_moves]
-        UCB1 = max(legal_children, key=lambda c: float(c.wins) / float(c.visits) + exploration * sqrt(log(c.considerations) / float(c.visits)))
+        UCB1_selection = max(legal_children, key=lambda c: float(c.wins) / float(c.visits) + exploration * sqrt(log(c.considerations) / float(c.visits)))
         for child in legal_children:
             child.considerations += 1
-        return UCB1
+        return UCB1_selection
     def add_child(self, move, player):
         new = Node(move, self, player)
         self.children.append(new)
