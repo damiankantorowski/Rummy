@@ -1,7 +1,7 @@
 import pygame
 from random import shuffle, choice
 from copy import deepcopy
-from enums import Suits, Ranks, Scores, States
+from enums import Suits, Ranks, Scores, Moves, States
 from ISMCTS import ISMCTS
 from threading import Thread
 
@@ -44,13 +44,14 @@ class Hand(pygame.sprite.OrderedUpdates):
         super().__init__()
         self.cards = []
         self.possible_melds = []
+        self.possible_layoffs = []
         self.swapped_joker = 0
     def __deepcopy__(self, _):
         new = Hand.__new__(Hand)
         new.cards = deepcopy(self.cards)
         new.possible_melds = deepcopy(self.possible_melds)
-        new.swapped_joker = 0
-        new.is_sprite_group = False
+        new.possible_layoffs = deepcopy(self.possible_melds)
+        new.swapped_joker = self.swapped_joker
         return new
     def add_card(self, card):
         if card is not None:
@@ -67,18 +68,24 @@ class Hand(pygame.sprite.OrderedUpdates):
         return self.cards.pop(self.cards.index(card))
     def calculate_score(self):
         return sum(card.score for card in self.cards)
+    def find_card(self, card):
+        for c in self.cards:
+            if c.suit == card.suit and c.rank == card.rank:
+                return c
+        return None
     def find_melds(self):
+        self.possible_melds = []
         group = Meld()
         self.sort_by_rank()
         if len(self.cards) >= 4:
             for four in list(zip(self.cards, self.cards[1:], self.cards[2:], self.cards[3:])):
                 group.cards = list(four)
-                if group.is_valid_set():
+                if group.is_valid_run():
                     self.possible_melds.append(four)
         if len(self.cards) >= 3:
             for three in list(zip(self.cards, self.cards[1:], self.cards[2:])):
                 group.cards = list(three)
-                if group.is_valid_set():
+                if group.is_valid_run():
                     self.possible_melds.append(three)
         self.sort_by_suit()
         if len(self.cards) >= 4:
@@ -91,6 +98,12 @@ class Hand(pygame.sprite.OrderedUpdates):
                 group.cards = list(three)
                 if group.is_valid_set():
                     self.possible_melds.append(three)
+    def find_layoffs(self, melds):
+        self.possible_layoffs = []
+        for m, meld in enumerate(melds[:-1]):
+            for card in self.cards:
+                if meld.cards and (meld.cards[0].rank == card.rank or (meld.cards[0].suit == card.suit and (card.rank == meld.cards[-1].rank + 1 or card.rank == meld.cards[0].rank - 1))):
+                    self.possible_layoffs.append((m, card))
     def update(self):
         self.empty()
         for index, card in enumerate(self.cards):
@@ -180,41 +193,39 @@ class Meld(pygame.sprite.OrderedUpdates):
                 return temp
         return None
     def is_valid_run(self):
-        if self.cards:
-            suit = self.cards[0].suit
-            if len(self.cards) > 1: 
-                if self.cards[0].rank == Ranks.ACE and self.cards[1].rank != Ranks.ACE and self.cards[1].rank != Ranks.KING:
-                    self.cards[0].rank = 1
-                elif self.cards[0].rank == Ranks.JOKER:
-                    suit = self.cards[1].suit
-                if self.cards[-2].rank == Ranks.ACE:
+        suit = self.cards[0].suit
+        size = len(self.cards)
+        if size > 1: 
+            if self.cards[0].rank == Ranks.ACE and self.cards[1].rank != Ranks.ACE and self.cards[1].rank != Ranks.KING:
+                self.cards[0].rank = 1
+            elif self.cards[0].rank == Ranks.JOKER:
+                suit = self.cards[1].suit
+            if self.cards[-2].rank == Ranks.ACE:
+                return False
+        if any(card.suit != suit and card.rank != Ranks.JOKER for card in self.cards):
+            return False
+        if any(self.cards[i+1].rank != card.rank + 1 and self.cards[i+1].rank != Ranks.JOKER and card.rank != Ranks.JOKER for i, card in enumerate(self.cards[:-1])):
+            return False
+        if size > 2 and self.cards[0].rank != Ranks.JOKER:
+            for i, card in enumerate(self.cards[:-1]):
+                if card.rank == Ranks.JOKER and self.cards[i+1].rank != self.cards[i-1].rank + 2:
                     return False
-            if len(self.cards) < 4 and sum(1 for card in self.cards if card.rank == Ranks.JOKER) > 1:
-                return False
-            if any(card.rank == Ranks.JOKER and self.cards[i+1].rank == Ranks.JOKER for i, card in enumerate(self.cards[:-1])):
-                return False
-            if any(card.suit != suit and card.rank != Ranks.JOKER for card in self.cards):
-                return False
-            if any(self.cards[i+1].rank != card.rank + 1 and self.cards[i+1].rank != Ranks.JOKER and card.rank != Ranks.JOKER for i, card in enumerate(self.cards[:-1])):
-                return False
-            if len(self.cards) > 2 and self.cards[0].rank != Ranks.JOKER:
-                for i, card in enumerate(self.cards[:-1]):
-                    if card.rank == Ranks.JOKER and self.cards[i+1].rank != self.cards[i-1].rank + 2:
-                        return False
+        if any(card.rank == Ranks.JOKER and self.cards[i+1].rank == Ranks.JOKER for i, card in enumerate(self.cards[:-1])):
+            return False
+        if size < 4 and sum(1 for card in self.cards if card.rank == Ranks.JOKER) > 1:
+            return False
         return True
     def is_valid_set(self):
-        if self.cards:
-            rank = self.cards[0].rank
-            if self.cards[0].rank == Ranks.JOKER and len(self.cards) > 1:
-                rank = self.cards[1].rank
-            if len(self.cards) > 4:
-                return False
-            if len(self.cards) < 4 and sum(1 for card in self.cards if card.rank == Ranks.JOKER) > 1:
-                return False
-            if any(card.rank != rank and card.rank != Ranks.JOKER for card in self.cards):
-                return False
-            if any(card.rank == Ranks.JOKER and self.cards[i+1].rank == Ranks.JOKER for i, card in enumerate(self.cards[:-1])):
-                return False 
+        rank = self.cards[0].rank
+        size = len(self.cards)
+        if self.cards[0].rank == Ranks.JOKER and size > 1:
+            rank = self.cards[1].rank
+        if any(card.rank != rank and card.rank != Ranks.JOKER for card in self.cards):
+            return False
+        if size < 4 and sum(1 for card in self.cards if card.rank == Ranks.JOKER) > 1:
+            return False
+        if size > 4:
+            return False
         return True
     def update(self):
         self.empty()
@@ -270,15 +281,6 @@ class Player:
                 self.hand.swapped_joker += 1
                 return True
         return False
-    def lay_off(self, melds):
-        self.hand.find_melds()
-        for meld in self.hand.possible_melds:
-            for card in meld:
-                self.add_to_meld(melds[-1], card)
-            self.hand.possible_melds.remove(meld)
-        for card in self.hand.cards:
-            for meld in melds[:-1]:
-                self.add_to_meld(meld, card)
     def move_card(self, mouse_pos, game_state, is_players_turn):
         posx = mouse_pos[0] + self.selected_card.rel_pos[0]
         first = resolution[0]/2 - (len(self.hand.cards) / 2 + 1) * 80
@@ -320,39 +322,22 @@ class Game():
             images[i] = pygame.transform.scale(images[i], (int(images[i].get_size()[0]/4), int(images[i].get_size()[1]/4)))
         return images
     def deal_cards(self):
-        for i in range(13):
+        for i in range(10):
             self.player.hand.add_card(self.deck.deal())
             self.computer.hand.add_card(self.deck.deal())
     def get_computers_move(self):
         if self.current_player == self.computer and self.state != States.OVER:
-            if self.state == States.DISCARD:
-                self.computer.lay_off(self.melds)
             if self.search.best_move:
-                print(self.search.best_move)
                 self.do_move(self.search.best_move)
                 self.search.best_move = None
             elif self.search.thread is None or not self.search.thread.is_alive():
                 self.search.thread = Thread(target=self.search.run, args = [self], daemon = True)
                 self.search.thread.start()
-            #if best_move[1] == 'discard':
-            #    card = self.computer.hand.cards[best_move[2]]
-            #    if card.rank == Ranks.JOKER:
-            #        print(best_move[0], best_move[1], Ranks(card.rank).name)
-            #    else: print(best_move[0], best_move[1], Ranks(card.rank).name, Suits(card.suit).name)
-            #elif best_move[1] == 'draw': 
-            #    print(best_move[0], best_move[1], best_move[2])
-            #elif best_move[1] == 'lay_off':
-            #    print(best_move[0], best_move[1])
-
-            #for card in self.computer.hand.cards:
-            #    if card.rank == Ranks.JOKER:
-            #        print("JOKER")
-            #    elif card.rank == 1: 
-            #        print("ACE", Suits(card.suit).name)
-            #    else:
-            #        print(Ranks(card.rank).name, Suits(card.suit).name)
+            #Non threaded
+            #self.search.run(self)
+            #self.do_move(self.search.best_move)
     def validate_melds(self):
-        if any(len(meld.cards) > 0 and len(meld.cards) < 3 or not (meld.is_valid_run() or meld.is_valid_set()) for meld in self.melds):
+        if any(meld.cards and (len(meld.cards) < 3 or not (meld.is_valid_run() or meld.is_valid_set())) for meld in self.melds):
             return False
         return True
     def set_placeholders(self):
@@ -379,13 +364,12 @@ class Game():
         self.deck.shuffle()
         for card in self.deck.cards:
             card.snapped_pos = card.drop_pos = [0, 0]
-        self.pile.empty()
         self.pile.cards.clear()
     def fix_cards(self):
         for meld in self.melds:
             for card in meld.cards:
                 card.fixed = True
-        for card in self.player.hand:
+        for card in self.player.hand.cards:
             card.fixed = False
     def clone_and_randomize(self, player):
         new = Game.__new__(Game)
@@ -403,19 +387,33 @@ class Game():
     def get_moves(self):
         moves = []
         if self.state == States.DRAW:
-            moves.append("draw_deck")
-            moves.append("draw_pile")
+            moves.append(Moves.DRAW_DECK)
+            moves.append(Moves.DRAW_PILE)
         elif self.state == States.DISCARD:
-            moves = [("discard", c) for c, _ in enumerate(self.current_player.hand.cards)]
+            self.current_player.hand.find_melds()
+            self.current_player.hand.find_layoffs(self.melds)
+            moves = [(Moves.DISCARD, card) for card in self.current_player.hand.cards]
+            for meld in self.current_player.hand.possible_melds:
+                moves.append((Moves.MELD, meld))
+            for layoff in self.current_player.hand.possible_layoffs:
+                moves.append((Moves.LAY_OFF, layoff[0], layoff[1]))
         return moves
     def do_move(self, move):
-        if move == "draw_deck":
+        if move == Moves.DRAW_DECK:
             self.current_player.draw_card(self.deck)
-        elif move == "draw_pile":
+            self.progress_state()
+        elif move == Moves.DRAW_PILE:
             self.current_player.draw_card(self.pile)
-        elif move[0] == "discard":
-            self.current_player.discard_card(self.current_player.hand.cards[move[1]], self.pile)
-        self.progress_state()
+            self.progress_state()
+        elif move[0] == Moves.DISCARD:
+            self.current_player.discard_card(self.current_player.hand.find_card(move[1]), self.pile)
+            self.progress_state()
+        elif move[0] == Moves.MELD:
+            for card in move[1]:
+                self.current_player.add_to_meld(self.melds[-1], self.current_player.hand.find_card(card))
+            self.melds.append(Meld())
+        elif move[0] == Moves.LAY_OFF:
+            self.current_player.add_to_meld(self.melds[move[1]], self.current_player.hand.find_card(move[2]))  
     def progress_state(self):
         if self.state == States.DISCARD:
             if self.is_players_turn():
@@ -423,15 +421,16 @@ class Game():
             else:
                 self.current_player = self.player
             self.state = States.DRAW
+            self.fix_cards()
         elif self.state == States.DRAW:
             self.state = States.DISCARD
+        if not self.deck.cards:
+            self.pile_to_deck()
         self.check_winners()
     def is_players_turn(self):
         return self.current_player == self.player
     def get_result(self, player):
-        if player and not player.hand.cards:
-            return 1
-        return 0
+        return 1 if player and not player.hand.cards else 0
     def check_winners(self):
         if self.get_result(self.player) and self.state == States.DRAW:
             self.player.points += self.computer.hand.calculate_score()
@@ -456,11 +455,9 @@ class Game():
             return
         if event.type == pygame.MOUSEBUTTONDOWN:
             if self.is_players_turn() and self.state == States.DRAW and self.deck.rect.collidepoint(event.pos):
-                self.player.draw_card(self.deck)
-                self.progress_state()
+                self.do_move(Moves.DRAW_DECK)
             elif self.is_players_turn() and self.state == States.DRAW and self.pile.rect.collidepoint(event.pos):
-                self.player.draw_card(self.pile)
-                self.progress_state()
+                self.do_move(Moves.DRAW_PILE)
             elif self.player.selected_card == None:
                 self.player.select_card(event.pos)
             for meld in self.melds:
@@ -474,9 +471,7 @@ class Game():
                     self.melds_valid = self.validate_melds()
                     self.joker_swapping_finished = not self.player.hand.swapped_joker
                     if self.melds_valid and self.joker_swapping_finished:
-                        self.player.discard_card(card, self.pile)
-                        self.fix_cards()
-                        self.progress_state()
+                        self.do_move((Moves.DISCARD, card))
                 else: 
                     for meld in self.melds:
                         if meld.rect.collidepoint(card.rect.center):
@@ -494,8 +489,6 @@ class Game():
         self.pile.update()
         self.sprites_all.update()
         self.set_placeholders()
-        if not self.deck.cards:
-            self.pile_to_deck()
         for meld in self.melds:
             meld.update()
         for card in self.computer.hand.cards:
@@ -515,8 +508,6 @@ class Game():
             self.print_error(screen, 'Nie zako\u0144czono podmiany Jokera!')   
         for i, card in enumerate(self.computer.hand.cards):
             screen.blit(card.image, (600 - i * 30, -130))
-        #for i, _ in enumerate(self.computer.hand.cards):
-        #    screen.blit(self.images[0], (300 + i * 30, -130))
         for meld in self.melds:
             meld.draw(screen)
         self.pile.draw(screen)

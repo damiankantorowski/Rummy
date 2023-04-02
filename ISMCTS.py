@@ -8,11 +8,11 @@ class Node:
     def __init__(self, move=None, parent=None, player=None):
         self.move = move
         self.parent = parent
-        self.children = []
         self.player = player
+        self.children = []
         self.visits = 0
-        self.considerations = 1
         self.wins = 0
+        self.considerations = 1
     def get_untried_moves(self, legal_moves):
         tried_moves = [child.move for child in self.children]
         return [move for move in legal_moves if move not in tried_moves]
@@ -34,9 +34,9 @@ class ISMCTS:
     def __init__(self):
         self.best_move = None
         self.thread = None
-    def run(self, root_state, limit=2000):
+    def run(self, root_state, limit=50):
         root_node = Node()
-        for i in range(limit):
+        for _ in range(limit):
             node = root_node
             state = root_state.clone_and_randomize(root_state.current_player)
             while (legal_moves := state.get_moves()) and not node.get_untried_moves(legal_moves):

@@ -44,3 +44,11 @@ class States(IntEnum):
     DRAW = 2
     DISCARD = 3
     OVER = 4
+
+class Moves(IntEnum):
+    DRAW_DECK = 1
+    DRAW_PILE = 2
+    DISCARD = 3
+    MELD = 4
+    LAY_OFF = 5
+    SWAP_JOKER = 6
