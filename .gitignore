@@ -361,3 +361,9 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/Rummy.sln
+/Rummy.pyproj
+/.gitattributes
+/.gitignore
+/rummy.exe
+/rummy.spec
