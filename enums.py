@@ -1,10 +1,11 @@
 from enum import IntEnum
 
+
 class Suits(IntEnum):
-    CLUBS = 1
-    SPADES = 2
-    HEARTS = 3
-    DIAMONDS = 4
+    CLUBS = 0
+    SPADES = 1
+    HEARTS = 2
+    DIAMONDS = 3
 
 class Ranks(IntEnum):
     TWO = 2
@@ -42,10 +43,13 @@ class States(IntEnum):
     CLOSED = 0
     MENU = 1
     DRAW = 2
-    DISCARD = 3
-    OVER = 4
+    MELD = 3
+    LAY_OFF = 4
+    DISCARD = 5
+    OVER = 6
 
 class Moves(IntEnum):
+    PASS = 0
     DRAW_DECK = 1
     DRAW_PILE = 2
     DISCARD = 3
