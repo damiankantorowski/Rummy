@@ -7,7 +7,7 @@ if __name__ == '__main__':
         'rummy.py',
         '--noconfirm',
         '--onefile',
-        #'--windowed',
+        '--windowed',
         '--icon',
         path.join('images', 'rummy.ico'),
         '--add-data',

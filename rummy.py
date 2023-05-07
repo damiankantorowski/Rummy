@@ -1,5 +1,5 @@
 import sys
-from os import path
+import os
 from random import shuffle, choice
 from copy import deepcopy
 from threading import Thread
@@ -9,8 +9,7 @@ import pygame
 from enums import Suits, Ranks, Scores, Moves, States
 from ISMCTS import ISMCTS
 
-resolution = (1280, 720)
-#resolution = (1920, 1080)
+resolution = (1920, 1080)
 
 class Card():
 
@@ -37,8 +36,8 @@ class Card():
         return hash((self.suit, self.rank))
 
     def __repr__(self):
-        #return Ranks(self.rank).name + ' OF ' + Suits(self.suit).name
-        return Ranks(self.rank).name + ' OF ' + str(self.suit)
+        return ('JOKER' if self.rank == Ranks.JOKER 
+                else Ranks(self.rank).name + ' OF ' + Suits(self.suit).name)
 
     def __deepcopy__(self, _):
         new = Card.__new__(Card)
@@ -461,6 +460,7 @@ class Game():
         self.current_player = None
         self.pile = Pile()
         self.sort_button = Button((25, resolution[1]-135), self.images['sort'])
+        self.menu_buttons = pygame.sprite.Group(Button((resolution[0]/2, resolution[1]/2), pygame.Surface((100, 100))))
         self.melds = []
         self.sprites_all = pygame.sprite.Group(self.deck.sprite, self.sort_button)
         self.melds_valid = True
@@ -468,13 +468,13 @@ class Game():
         self.reshuffles = 0
 
     def load_images(self):
-        base_path = getattr(sys, '_MEIPASS', path.dirname(path.abspath(__file__))) 
-        pygame.display.set_icon(pygame.image.load(path.join(base_path, 'images', 'rummy.ico')))
-        images = {i: pygame.image.load(path.join(base_path, 'images', f'{i}.png')).convert_alpha() 
+        base_path = getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__))) 
+        pygame.display.set_icon(pygame.image.load(os.path.join(base_path, 'images', 'rummy.ico')))
+        images = {i: pygame.image.load(os.path.join(base_path, 'images', f'{i}.png')).convert_alpha() 
                   for i in range(54)}
         for i, image in images.items():
             images[i] = pygame.transform.scale(image, (int(image.get_width()/4), int(image.get_height()/4)))
-        images['sort'] = (pygame.image.load(path.join(base_path, 'images', 'sort.png')).convert_alpha())
+        images['sort'] = (pygame.image.load(os.path.join(base_path, 'images', 'sort.png')).convert_alpha())
         images['sort'] = pygame.transform.scale(images['sort'], (int(images['sort'].get_width()/7), int(images['sort'].get_height()/7)))
         return images
 
@@ -621,7 +621,7 @@ class Game():
         elif self.get_result(self.computer):
             self.computer.score += self.player.hand.calculate_score()
 
-    def restart(self):
+    def restart_round(self):
         self.player.hand.cards.clear()
         self.computer.hand.cards.clear()
         self.pile.cards.clear()
@@ -633,20 +633,44 @@ class Game():
         self.joker_swapping_finished = True
         self.melds_valid = True
         self.state = States.DRAW
-        self.current_player = choice((self.computer,))
+        self.current_player = choice((self.player, self.computer))
+
+    def change_resolution(self):
+        global resolution
+        if resolution == (1280, 720):
+            resolution = (1920, 1080)
+        else:
+            resolution = (1280, 720)
+        pygame.display.set_mode(resolution)
 
     def draw_menu(self):
-        self.draw_text('Start')
+        self.draw_text('R E M I K', (resolution[0]/2, resolution[1]*0.15), (255, 255, 255))
+        self.menu_buttons = [
+            self.draw_text('Graj', (resolution[0]/2, resolution[1]*0.5)),
+            self.draw_text(f'{resolution[0]} x {resolution[1]}', (resolution[0]/2, resolution[1]*0.6)),
+            self.draw_text('Wyjd\u017A', (resolution[0]/2, resolution[1]*0.7)),
+        ]
 
     def draw_leaderboard(self):
-        self.draw_text('Koniec gry')
+        if self.get_result(self.player):
+            looser = self.computer
+        else:
+            looser = self.player
+        self.draw_text('Koniec rundy', (resolution[0]/2, resolution[1]*0.15))
+        self.draw_text(f'Pozostale karty - {looser.hand.calculate_score()} pkt.', (resolution[0]/2, resolution[1]*0.4))
+        for i, card in enumerate(looser.hand.cards):
+            self.screen.blit(card.front, 
+                             ((resolution[0]//2 - len(looser.hand.cards) / 2 * (card.sprite.rect.width - 20) 
+                              + i * (card.sprite.rect.width - 20) - card.sprite.rect.width / 8), 
+                             resolution[1]*0.45))
 
-    def draw_text(self, text):
-        text = self.font.render(text, True, (255, 255, 255))
-        text.set_alpha(100)
+
+    def draw_text(self, text, pos, color=(100, 150, 100)):
+        text = self.font.render(text, True, color)
         rect = text.get_rect()
-        rect.center = (self.screen.get_width() / 2, self.screen.get_height() * 5 / 7)
+        rect.center = pos
         self.screen.blit(text, rect)
+        return rect
 
     def handle_event(self, event):
         if event.type == pygame.QUIT:
@@ -656,8 +680,13 @@ class Game():
             self.state = States.MENU
             return
         if event.type == pygame.MOUSEBUTTONDOWN:
-            if self.state == States.MENU:
-                self.restart()
+            if self.state == States.MENU: 
+                if self.menu_buttons[0].collidepoint(event.pos):
+                    self.restart_round()
+                elif self.menu_buttons[1].collidepoint(event.pos):
+                    self.change_resolution()
+                elif self.menu_buttons[2].collidepoint(event.pos):
+                    self.state = States.CLOSED
             elif self.sort_button.rect.collidepoint(event.pos):
                 self.sort_button.clicked = True
                 self.player.sort_hand()
@@ -713,6 +742,7 @@ class Game():
         self.computer.hand.update()
         self.get_computers_move()
         self.check_winners()
+        self.sort_button.pos = (25, resolution[1]-135)
 
     def draw(self):
         self.screen.fill((7,92,19))
@@ -726,17 +756,17 @@ class Game():
             return
         self.sprites_all.draw(self.screen)
         if not self.melds[-1].cards:
-            pygame.draw.rect(self.screen, (255, 255, 255), self.melds[-1].group.rect,  2, 3)
+            pygame.draw.rect(self.screen, (255, 255, 255), self.melds[-1].group.rect,  2, 5)
         if not self.pile.cards:
-            pygame.draw.rect(self.screen, (255, 255, 255), self.pile.group.rect,  2, 3)
+            pygame.draw.rect(self.screen, (255, 255, 255), self.pile.group.rect,  2, 5)
         if not self.melds_valid:
-            self.draw_text('Nieprawid\u0142owe u\u0142o\u017Cenie kart!')        
+            self.draw_text('Nieprawid\u0142owe u\u0142o\u017Cenie kart', (resolution[0]/2, resolution[1]-230))        
         if not self.joker_swapping_finished:
-            self.draw_text('Nie zako\u0144czono podmiany Jokera!')
+            self.draw_text('Nie zako\u0144czono podmiany Jokera', (resolution[0]/2, resolution[1]-230))
         if not self.is_players_turn():
-            self.draw_text('Komputer my\u015Bli...')
+            self.draw_text('Komputer my\u015Bli...', (resolution[0]/2, resolution[1]-230))
         elif self.state == States.DRAW:
-            self.draw_text('Dobierz kart\u0119')
+            self.draw_text('Dobierz kart\u0119', (resolution[0]/2, resolution[1]-230))
         for i, _ in enumerate(self.computer.hand.cards):
             self.screen.blit(self.images[0], (300 + i * 30, -130))
         for meld in self.melds:
@@ -747,6 +777,7 @@ class Game():
 
 
 if __name__ == '__main__':
+    os.environ['SDL_VIDEO_CENTERED'] = '1'
     pygame.init()
     clock = pygame.time.Clock()
     pygame.display.set_caption('Remik')

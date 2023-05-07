@@ -98,6 +98,6 @@ class ISMCTS:
                     node = node.parent
                 break
             i+=1
-        print(root_node.TreeToString(0))
+        #print(root_node.TreeToString(0))
         self.best_move = max(root_node.children, key=lambda c: c.visits).move
-        print(f"Best move after {i} iterations: {self.best_move}")
+        #print(f"Best move after {i} iterations: {self.best_move}")
