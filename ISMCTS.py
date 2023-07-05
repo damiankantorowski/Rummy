@@ -54,11 +54,9 @@ class ISMCTS:
             node = root_node
             state = root_state.clone_and_randomize()
             while True:
-                #Select
                 while (legal_moves := state.get_moves()) and not node.get_untried_moves(legal_moves):
                     node = node.select_child(legal_moves)
                     state.do_move(node.move)
-                #Expand
                 if (legal_moves := state.get_moves()) and (untried_moves := node.get_untried_moves(legal_moves)):
                     if legal_moves == [Moves.PASS]:
                         state.do_move(Moves.PASS)
@@ -67,10 +65,8 @@ class ISMCTS:
                     player = state.current_player
                     node = node.add_child(move, player)
                     state.do_move(move)
-                #Simulate
                 while legal_moves := state.get_moves():
                     state.do_move(choice(legal_moves))
-                #Backpropagate
                 while node is not None:
                     node.update(state)
                     node = node.parent
