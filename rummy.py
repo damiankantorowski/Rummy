@@ -7,9 +7,11 @@ from itertools import combinations
 from collections import defaultdict
 import pygame
 from enums import Suits, Ranks, Scores, Moves, States
-from ISMCTS import ISMCTS
+from ismcts import ISMCTS
 
-resolution = (1920, 1080)
+
+resolution = (1280, 720)
+
 
 class Card():
 
@@ -30,9 +32,18 @@ class Card():
         self.hidden = False
 
     def __eq__(self, other):
-        return isinstance(other, Card) and self.suit == other.suit and self.rank == other.rank
+        if hasattr(self, "sprite"):
+            return (isinstance(other, Card) 
+                    and self.suit == other.suit 
+                    and self.rank == other.rank 
+                    and self.sprite == other.sprite)
+        return (isinstance(other, Card) 
+                and self.suit == other.suit 
+                and self.rank == other.rank)
 
     def __hash__(self):
+        if hasattr(self, "sprite"):
+            return hash((self.suit, self.rank, self.sprite))
         return hash((self.suit, self.rank))
 
     def __repr__(self):
@@ -79,7 +90,7 @@ class Hand():
         self.group = pygame.sprite.OrderedUpdates()
         self.possible_melds = []
         self.possible_layoffs = []
-        self.swapped_joker = 0
+        self.possible_jokers_swaps = []
         self.sorted = False
         self.computers = False
 
@@ -89,11 +100,14 @@ class Hand():
         new.known_cards = deepcopy(self.known_cards)
         new.possible_melds = []
         new.possible_layoffs = []
-        new.swapped_joker = self.swapped_joker
+        new.possible_jokers_swap = []
         return new
 
     def add_card(self, card):
-        self.cards.append(card)
+        if card:
+           self.cards.append(card)
+           return True
+        return False
 
     def sort_by_rank(self):
         self.cards.sort(key = lambda card: (card.rank, card.suit))
@@ -150,6 +164,11 @@ class Hand():
                                  for card in self.cards 
                                  if meld.layoff_possible(card)]
 
+    def find_jokers_swaps(self, melds):
+        self.possible_jokers_swaps = [(m, card) for m, meld in enumerate(melds)
+                                      for card in self.cards
+                                      if meld.joker_swap_possible(card)]
+
     def update(self):
         self.group.empty()
         for index, card in enumerate(self.cards):
@@ -164,12 +183,12 @@ class Hand():
 
 class Deck():
 
-    def __init__(self, images):
+    def __init__(self, images, jokers_enabled):
         self.cards = []
         self.sprite = pygame.sprite.Sprite()
         self.sprite.image = images[0]
         self.sprite.rect = self.sprite.image.get_rect(center=(80, 100))
-        self.generate(images)
+        self.generate(images, jokers_enabled)
         self.shuffle()
 
     def __deepcopy__(self, _):
@@ -177,14 +196,15 @@ class Deck():
         new.cards = deepcopy(self.cards)
         return new
 
-    def generate(self, images):
+    def generate(self, images, jokers_enabled):
         num = 1
         for suit in Suits:
             for rank in range(Ranks.TWO, Ranks.JOKER):
                 self.cards.append(Card(suit, rank, Scores[Ranks(rank).name], images[num], images[0]))
                 num+=1
-        self.cards.append(Card(4, Ranks.JOKER, Scores.JOKER, images[53], images[0]))
-        self.cards.append(Card(4, Ranks.JOKER, Scores.JOKER, images[53], images[0]))
+        if jokers_enabled:
+            self.cards.append(Card(4, Ranks.JOKER, Scores.JOKER, images[53], images[0]))
+            self.cards.append(Card(4, Ranks.JOKER, Scores.JOKER, images[53], images[0]))
 
     def shuffle(self):
         shuffle(self.cards)
@@ -227,6 +247,7 @@ class Meld():
         self.group = pygame.sprite.OrderedUpdates()
         self.group.rect = pygame.Rect((170, 60), (125, 181))
         self.is_run = False
+        self.jokers = 0
         self.rank = None
         self.suit = None
 
@@ -236,6 +257,7 @@ class Meld():
         new.is_run = self.is_run
         new.rank = self.rank
         new.suit = self.suit
+        new.jokers = self.jokers
         return new
 
     def put_front(self, card):
@@ -255,14 +277,17 @@ class Meld():
     def deal(self):
         for card in reversed(self.cards):
             if not card.fixed:
+                if card.rank == Ranks.JOKER:
+                    self.jokers -= 1
                 return self.cards.pop(self.cards.index(card))
         return None
 
-    def swap_joker(self, Card):
+    def swap_joker(self, card_to_swap):
         for i, card in enumerate(self.cards):
-            if card.rank == Ranks.JOKER and card.fixed and Card.rank != Ranks.JOKER:
+            if card.rank == Ranks.JOKER and (not hasattr(card, "fixed") 
+                                             or card.fixed) and card_to_swap.rank != Ranks.JOKER:
                 temp = self.cards[i]
-                self.cards[i] = Card
+                self.cards[i] = card_to_swap
                 if not (self.is_valid_run() or self.is_valid_set()):
                     self.cards[i] = temp
                     continue
@@ -273,13 +298,28 @@ class Meld():
 
     def layoff_possible(self, card):
         if self.is_run:
-            return (self.suit == card.suit
-            and ((card.rank == self.cards[-1].rank + 1 or card.rank == self.cards[0].rank - 1)
-            or card.rank == Ranks.JOKER and (self.cards[0].rank >= Ranks.TWO or self.cards[-1].rank <= Ranks.ACE)
-            or (self.cards[0].rank == Ranks.JOKER or self.cards[-1].rank == Ranks.JOKER) 
-            and (card.rank == self.cards[-2].rank + 2 or card.rank == self.cards[1].rank - 2)))
+            return ((card.rank == Ranks.JOKER and 
+                     (self.cards[0].rank >= Ranks.TWO or self.cards[-1].rank <= Ranks.ACE)) 
+                    or self.suit == card.suit 
+                    and ((card.rank == self.cards[-1].rank + 1 or card.rank == self.cards[0].rank - 1)
+                         or (self.cards[0].rank == Ranks.JOKER or self.cards[-1].rank == Ranks.JOKER) 
+                         and (card.rank == self.cards[-2].rank + 2 or card.rank == self.cards[1].rank - 2)))
         else: 
-            return self.rank == card.rank
+            return self.rank == card.rank or card.rank == Ranks.JOKER and len(self.cards) < 4
+
+    def joker_swap_possible(self, card_to_swap):
+        if self.jokers:
+            if self.is_run:
+                if self.suit == card_to_swap.suit:
+                    for c, card in enumerate(self.cards):
+                        if card.rank == Ranks.JOKER:
+                            if c == 0:
+                                return self.cards[1].rank == card_to_swap.rank + 1
+                            else:
+                                return self.cards[c-1].rank == card_to_swap.rank - 1
+            else:
+                return self.rank == card_to_swap.rank
+        return False
 
     def is_valid_run(self):
         self.suit = self.cards[0].suit
@@ -387,9 +427,9 @@ class Player():
 
     def add_to_meld(self, meld, card, back=False):
         if not back and meld.put_front(card) or meld.put_back(card):
-            if card.rank == Ranks.JOKER and self.hand.swapped_joker:
-                self.hand.swapped_joker -= 1
             self.hand.discard(card)
+            if card.rank == Ranks.JOKER:
+                meld.jokers += 1
             return True
         return False
 
@@ -399,7 +439,6 @@ class Player():
             if joker:
                 self.hand.discard(card)
                 self.hand.add_card(joker)
-                self.hand.swapped_joker += 1
                 return True
         return False
 
@@ -445,26 +484,29 @@ class Button(pygame.sprite.Sprite):
         else:
            self.rect.x, self.rect.y = self.pos
 
+
 class Game():
 
     def __init__(self):
         self.screen = pygame.display.set_mode(resolution)
         self.font = pygame.font.SysFont(None, 50)
         self.images = self.load_images()
-        self.deck = Deck(self.images)
+        self.deck = Deck(self.images, False)
         self.player = Player()
         self.computer = Player()
         self.computer.hand.computers = True
+        self.jokers_enabled = False
         self.search = ISMCTS()
         self.state = States.MENU
         self.current_player = None
         self.pile = Pile()
         self.sort_button = Button((25, resolution[1]-135), self.images['sort'])
-        self.menu_buttons = pygame.sprite.Group(Button((resolution[0]/2, resolution[1]/2), pygame.Surface((100, 100))))
+        self.next_round_button = None
+        self.menu_buttons = []
         self.melds = []
         self.sprites_all = pygame.sprite.Group(self.deck.sprite, self.sort_button)
         self.melds_valid = True
-        self.joker_swapping_finished = True
+        self.scores_calculated = False
         self.reshuffles = 0
 
     def load_images(self):
@@ -484,7 +526,8 @@ class Game():
             self.computer.hand.add_card(self.deck.deal())
 
     def get_computers_move(self):
-        if not self.is_players_turn() and self.state in [States.DRAW, States.MELD, States.LAY_OFF, States.DISCARD]:
+        if not self.is_players_turn() and self.state in [
+            States.DRAW, States.MELD, States.LAY_OFF, States.DISCARD]:
             if self.search.best_move is not None:
                 self.do_move(self.search.best_move)
                 self.search.best_move = None
@@ -492,11 +535,11 @@ class Game():
             elif self.get_moves() == [Moves.PASS]:
                 self.do_move(Moves.PASS)
             elif self.search.thread is None or not self.search.thread.is_alive():
-                self.search.thread = Thread(target=self.search.run, args = [self], daemon = True)
+                self.search.thread = Thread(
+                    target = self.search.run, 
+                    args = [self], 
+                    daemon = True)
                 self.search.thread.start()
-            #Non threaded
-            #self.search.run(self)
-            #self.do_move(self.search.best_move)
 
     def validate_melds(self):
         if any(meld.cards 
@@ -566,8 +609,11 @@ class Game():
             moves.append(Moves.PASS)
         elif self.state == States.LAY_OFF:
             self.current_player.hand.find_layoffs(self.melds)
+            self.current_player.hand.find_jokers_swaps(self.melds)
             moves = [(Moves.LAY_OFF, possible_layoff[0], possible_layoff[1]) 
                         for possible_layoff in self.current_player.hand.possible_layoffs]
+            for possible_joker_swap in self.current_player.hand.possible_jokers_swaps:
+                moves.append((Moves.SWAP_JOKER, possible_joker_swap[0], possible_joker_swap[1]))
             moves.append(Moves.PASS)
         elif self.state == States.DISCARD:
             moves = [(Moves.DISCARD, card) for card in self.current_player.hand.cards]
@@ -591,6 +637,8 @@ class Game():
             self.melds.append(Meld())
         elif move[0] == Moves.LAY_OFF:
             self.current_player.add_to_meld(self.melds[move[1]], self.current_player.hand.find_card(move[2]))
+        elif move[0] == Moves.SWAP_JOKER:
+            self.current_player.swap_joker(self.melds[move[1]], self.current_player.hand.find_card(move[2]))
         
     def progress_state(self):
         if self.state == States.DISCARD:
@@ -615,22 +663,30 @@ class Game():
             return 0.5
         return 0 if player.hand.cards else 1
 
+    def is_game_over(self):
+        return self.player.score > 100 or self.computer.score > 100
+
     def check_winners(self):
         if self.get_result(self.player):
             self.player.score += self.computer.hand.calculate_score()
+            self.state = States.OVER
+            self.scores_calculated = True
         elif self.get_result(self.computer):
             self.computer.score += self.player.hand.calculate_score()
+            self.state = States.OVER
+            self.scores_calculated = True
 
     def restart_round(self):
+        self.search.best_move = self.search.thread = None
         self.player.hand.cards.clear()
         self.computer.hand.cards.clear()
         self.pile.cards.clear()
         self.melds.clear()
         self.melds.append(Meld())
-        self.deck = Deck(self.images)
+        self.deck = Deck(self.images, self.jokers_enabled)
         self.deal_cards()
         self.pile.put(self.deck.deal())
-        self.joker_swapping_finished = True
+        self.scores_calculated = False
         self.melds_valid = True
         self.state = States.DRAW
         self.current_player = choice((self.player, self.computer))
@@ -646,24 +702,34 @@ class Game():
     def draw_menu(self):
         self.draw_text('R E M I K', (resolution[0]/2, resolution[1]*0.15), (255, 255, 255))
         self.menu_buttons = [
-            self.draw_text('Graj', (resolution[0]/2, resolution[1]*0.5)),
-            self.draw_text(f'{resolution[0]} x {resolution[1]}', (resolution[0]/2, resolution[1]*0.6)),
-            self.draw_text('Wyjd\u017A', (resolution[0]/2, resolution[1]*0.7)),
+            self.draw_text('Graj', (resolution[0]/2, resolution[1]*0.4)),
+            self.draw_text('Zasady', (resolution[0]/2, resolution[1]*0.5)),
+            self.draw_text(f'Jokery: {"TAK" if self.jokers_enabled else "NIE"}', (resolution[0]/2, resolution[1]*0.6)),
+            self.draw_text(f'{resolution[0]} x {resolution[1]}', (resolution[0]/2, resolution[1]*0.7)),
+            self.draw_text('Wyjd\u017A', (resolution[0]/2, resolution[1]*0.8)),
         ]
-
+    
     def draw_leaderboard(self):
         if self.get_result(self.player):
             looser = self.computer
         else:
             looser = self.player
-        self.draw_text('Koniec rundy', (resolution[0]/2, resolution[1]*0.15))
-        self.draw_text(f'Pozostale karty - {looser.hand.calculate_score()} pkt.', (resolution[0]/2, resolution[1]*0.4))
+        if self.is_game_over():
+            if looser == self.computer:
+                self.draw_text('Wygra\u0142e\u015B', (resolution[0]/2, resolution[1]*0.15), (255, 255, 255))
+            else:
+                self.draw_text('Przegra\u0142e\u015B', (resolution[0]/2, resolution[1]*0.15), (255, 255, 255))
+        else:
+            self.draw_text('Koniec rundy', (resolution[0]/2, resolution[1]*0.15), (255, 255, 255))
+        self.draw_text(f'Pozostale karty - {looser.hand.calculate_score()} pkt.', (resolution[0]/2, resolution[1]*0.25))
         for i, card in enumerate(looser.hand.cards):
             self.screen.blit(card.front, 
                              ((resolution[0]//2 - len(looser.hand.cards) / 2 * (card.sprite.rect.width - 20) 
                               + i * (card.sprite.rect.width - 20) - card.sprite.rect.width / 8), 
-                             resolution[1]*0.45))
-
+                             resolution[1]*0.3))
+        self.draw_text(f'Gracz - {self.player.score} pkt. Komputer - {self.computer.score} pkt.', (resolution[0]/2, resolution[1]*0.6))
+        if not self.is_game_over():
+            self.next_round_button = self.draw_text('Kolejne rozdanie', (resolution[0]/2, resolution[1]*0.9), (255, 255, 255))
 
     def draw_text(self, text, pos, color=(100, 150, 100)):
         text = self.font.render(text, True, color)
@@ -683,10 +749,21 @@ class Game():
             if self.state == States.MENU: 
                 if self.menu_buttons[0].collidepoint(event.pos):
                     self.restart_round()
+                    self.computer.score = self.player.score = 0
                 elif self.menu_buttons[1].collidepoint(event.pos):
-                    self.change_resolution()
+                    os.startfile(
+                        os.path.join(
+                            getattr(sys, '_MEIPASS', os.path.dirname(os.path.abspath(__file__))), 
+                            'rules.txt'))       
                 elif self.menu_buttons[2].collidepoint(event.pos):
+                    self.jokers_enabled = not self.jokers_enabled
+                elif self.menu_buttons[3].collidepoint(event.pos):
+                    self.change_resolution()
+                elif self.menu_buttons[4].collidepoint(event.pos):
                     self.state = States.CLOSED
+            elif self.state == States.OVER:
+                if self.next_round_button.collidepoint(event.pos) and not self.is_game_over():
+                    self.restart_round()
             elif self.sort_button.rect.collidepoint(event.pos):
                 self.sort_button.clicked = True
                 self.player.sort_hand()
@@ -703,7 +780,7 @@ class Game():
             for meld in self.melds:
                 if self.state == States.DISCARD and meld.group.rect.collidepoint(event.pos):
                     if self.player.draw_deck(meld):
-                        self.joker_swapping_finished = self.melds_valid = True
+                        self.melds_valid = True
                         self.player.hand.sorted = not self.player.hand.sorted
             return
         if event.type == pygame.MOUSEBUTTONUP:
@@ -712,8 +789,7 @@ class Game():
                 card = self.player.selected_card
                 if self.pile.group.rect.collidepoint(card.sprite.rect.center):
                     self.melds_valid = self.validate_melds()
-                    self.joker_swapping_finished = not self.player.hand.swapped_joker
-                    if self.melds_valid and self.joker_swapping_finished:
+                    if self.melds_valid:
                         self.do_move((Moves.DISCARD, card))
                         self.fix_cards()
                 else: 
@@ -741,7 +817,8 @@ class Game():
         self.player.hand.update()
         self.computer.hand.update()
         self.get_computers_move()
-        self.check_winners()
+        if self.state == States.OVER and not self.scores_calculated:
+            self.check_winners()
         self.sort_button.pos = (25, resolution[1]-135)
 
     def draw(self):
@@ -761,8 +838,6 @@ class Game():
             pygame.draw.rect(self.screen, (255, 255, 255), self.pile.group.rect,  2, 5)
         if not self.melds_valid:
             self.draw_text('Nieprawid\u0142owe u\u0142o\u017Cenie kart', (resolution[0]/2, resolution[1]-230))        
-        if not self.joker_swapping_finished:
-            self.draw_text('Nie zako\u0144czono podmiany Jokera', (resolution[0]/2, resolution[1]-230))
         if not self.is_players_turn():
             self.draw_text('Komputer my\u015Bli...', (resolution[0]/2, resolution[1]-230))
         elif self.state == States.DRAW:

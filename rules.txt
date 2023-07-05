@@ -1,0 +1,16 @@
+ZASADY
+• Ka¿dy z graczy dostaje po 10 kart z klasycznej talii 52 kart + 2 Jokery
+• Celem gry jest pozbycie siê wszystkich kart z rêki. Pierwszy gracz, któremu siê to uda, wygrywa rundê.
+• Na pocz¹tku tury gracz dobiera kartê ze stosu zakrytego.
+• Na zakoñczenie tury gracz musi odrzuciæ wybran¹ ze znajduj¹cych siê w jego rêce kart na stos kart odrzuconych.
+• Kart mo¿na siê pozbyæ podczas tury na trzy sposoby: wy³o¿yæ na stó³, do³o¿yæ do ju¿ le¿¹cych na stole lub odrzuciæ na stos. 
+• Karty mog¹ byæ wy³o¿one na jeden z dwóch sposobów: jako sekwens lub jako grupa.
+• Sekwens sk³ada siê z trzech lub wiêcej kart tego samego koloru i u³o¿onych po kolei, np. 3, 4 i 5 Pik. 
+• Grupê stanowi¹ trzy lub cztery karty tej samej wartoœci, ale ró¿nych kolorów, np. 7 Kier, Pik i Trefl. 
+• Brakuj¹ce karty mog¹ byæ zast¹pione Jokerami, jednak w danym wy³o¿eniu nie mo¿e byæ ich wiêcej ni¿ prawdziwych kart. 
+• Nie mo¿na uk³adaæ dwóch Jokerów obok siebie.
+• Joker znajduj¹cy siê na stole mo¿e byæ zamieniony z pasuj¹c¹ kart¹.
+• Runda koñczy siê gdy jeden z graczy pozbêdzie siê wszystkich swoich kart i umieœci ostatni¹ kartê na stosie kart odrzuconych.
+• Zwyciêzca zdobywa tyle punktów, ile warte s¹ karty pozosta³e na rêce przeciwnika.
+• Karty od 2 do 10 s¹ liczone wed³ug wartoœci. Walet, Dama i Król s¹ warte 10 pkt., As - 11, Joker - 15.
+• Gra koñczy siê, gdy któryœ z graczy zdobêdzie co najmniej 100 punktów.

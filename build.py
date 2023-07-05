@@ -2,6 +2,7 @@ import PyInstaller.__main__
 from shutil import rmtree  
 from os import remove, path
 
+
 if __name__ == '__main__':
     PyInstaller.__main__.run([
         'rummy.py',
@@ -12,6 +13,8 @@ if __name__ == '__main__':
         path.join('images', 'rummy.ico'),
         '--add-data',
         'images;images',
+        '--add-data',
+        'rules.txt;.',
         '--distpath',
         ''
     ])
