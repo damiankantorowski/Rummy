@@ -1,5 +1,7 @@
 <img width="1274" height="738" alt="image" src="https://github.com/user-attachments/assets/1887ed2a-3b14-490e-8756-a1f2455d7ca5" />
+
 # ZASADY
+
 - Każdy z graczy dostaje po 10 kart z klasycznej talii 52 kart + 2 Jokery
 - Celem gry jest pozbycie się wszystkich kart z ręki. Pierwszy gracz, któremu się to uda, wygrywa rundę.
 - Na początku tury gracz dobiera kartę ze stosu zakrytego.
