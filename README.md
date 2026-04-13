@@ -17,3 +17,5 @@
 - Zwycięzca zdobywa tyle punktów, ile warte są karty pozostałe na ręce przeciwnika.
 - Karty od 2 do 10 są liczone według wartości. Walet, Dama i Król są warte 10 pkt., As - 11, Joker - 15.
 - Gra kończy się, gdy któryś z graczy zdobędzie co najmniej 100 punktów.
+
+# [Dokumentacja](Documentation.pdf)
